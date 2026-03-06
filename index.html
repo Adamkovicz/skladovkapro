@@ -1,0 +1,2077 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SkladovkaPro — Skladové hospodářství</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  :root {
+    --bg: #0d0f14; --surface: #151820; --surface2: #1c2030; --border: #2a3040;
+    --accent: #00e5a0; --accent2: #ff6b35; --accent3: #4d9fff;
+    --text: #e8ecf4; --text-dim: #6b7a9a;
+    --green: #00e5a0; --red: #ff4d6d; --yellow: #ffd166;
+    --mono: 'IBM Plex Mono', monospace; --sans: 'IBM Plex Sans', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; overflow-x: hidden; }
+  body::before { content:''; position:fixed; inset:0; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,229,160,0.012) 2px,rgba(0,229,160,0.012) 4px); pointer-events:none; z-index:9999; }
+
+  #sync-bar { position:fixed; top:0; left:0; right:0; height:2px; z-index:99999; }
+  #sync-bar.syncing { background:var(--accent); animation:syncPulse 1s infinite; }
+  @keyframes syncPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  #offline-banner { display:none; background:var(--red); color:white; text-align:center; padding:0.4rem; font-family:var(--mono); font-size:0.75rem; position:fixed; top:0; left:0; right:0; z-index:9998; }
+
+  header { background:var(--surface); border-bottom:1px solid var(--border); padding:0 2rem; display:flex; align-items:center; justify-content:space-between; height:60px; position:sticky; top:0; z-index:100; }
+  .logo { font-family:var(--mono); font-weight:700; font-size:1.1rem; color:var(--accent); display:flex; align-items:center; gap:0.5rem; }
+  .logo span { color:var(--text-dim); font-weight:400; }
+  .header-right { display:flex; align-items:center; gap:2rem; }
+  .header-stats { display:flex; gap:2rem; font-family:var(--mono); font-size:0.75rem; }
+  .hstat { display:flex; flex-direction:column; align-items:flex-end; }
+  .hstat-val { color:var(--accent); font-size:1rem; font-weight:600; }
+  .hstat-label { color:var(--text-dim); font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; }
+  .sync-status { display:flex; align-items:center; gap:0.4rem; font-family:var(--mono); font-size:0.7rem; color:var(--text-dim); }
+  .sync-dot { width:8px; height:8px; border-radius:50%; background:var(--text-dim); transition:background 0.3s; }
+  .sync-dot.online { background:var(--green); box-shadow:0 0 6px var(--green); }
+  .sync-dot.syncing { background:var(--yellow); animation:blink 0.8s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .layout { display:grid; grid-template-columns:240px 1fr; min-height:calc(100vh - 60px); }
+  nav { background:var(--surface); border-right:1px solid var(--border); padding:1.5rem 0; position:sticky; top:60px; height:calc(100vh - 60px); overflow-y:auto; }
+  .nav-section { margin-bottom:2rem; }
+  .nav-label { font-family:var(--mono); font-size:0.6rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.15em; padding:0 1.5rem; margin-bottom:0.5rem; }
+  .nav-item { display:flex; align-items:center; gap:0.75rem; padding:0.6rem 1.5rem; cursor:pointer; color:var(--text-dim); font-size:0.9rem; transition:all 0.15s; border-left:2px solid transparent; }
+  .nav-item:hover { color:var(--text); background:var(--surface2); }
+  .nav-item.active { color:var(--accent); border-left-color:var(--accent); background:rgba(0,229,160,0.05); }
+  .nav-icon { font-size:1rem; width:20px; text-align:center; }
+
+  main { padding:2rem; overflow:auto; }
+  .page { display:none; }
+  .page.active { display:block; }
+  .page-title { font-family:var(--mono); font-size:1.4rem; font-weight:700; margin-bottom:0.25rem; }
+  .page-sub { color:var(--text-dim); font-size:0.85rem; margin-bottom:2rem; }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:1.5rem; margin-bottom:1.5rem; }
+  .card-title { font-family:var(--mono); font-size:0.75rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; }
+  .card-title::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; }
+  .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; }
+
+  .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:1.25rem; position:relative; overflow:hidden; }
+  .stat-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+  .stat-card.green::before { background:var(--green); }
+  .stat-card.red::before { background:var(--red); }
+  .stat-card.blue::before { background:var(--accent3); }
+  .stat-card.yellow::before { background:var(--yellow); }
+  .stat-val { font-family:var(--mono); font-size:2rem; font-weight:700; line-height:1; margin-bottom:0.5rem; }
+  .stat-card.green .stat-val { color:var(--green); }
+  .stat-card.red .stat-val { color:var(--red); }
+  .stat-card.blue .stat-val { color:var(--accent3); }
+  .stat-card.yellow .stat-val { color:var(--yellow); }
+  .stat-label { font-size:0.8rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.05em; font-family:var(--mono); }
+
+  .form-row { display:grid; gap:1rem; margin-bottom:1rem; }
+  .form-row.cols-3 { grid-template-columns:1fr 1fr 1fr; }
+  .form-group { display:flex; flex-direction:column; gap:0.4rem; }
+  label { font-family:var(--mono); font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.1em; }
+  input, select { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:0.6rem 0.75rem; font-family:var(--mono); font-size:0.9rem; border-radius:3px; outline:none; transition:border-color 0.15s; width:100%; }
+  input:focus, select:focus { border-color:var(--accent); }
+  select option { background:var(--surface2); }
+
+  .btn { display:inline-flex; align-items:center; gap:0.5rem; padding:0.65rem 1.25rem; border:none; border-radius:3px; cursor:pointer; font-family:var(--mono); font-size:0.85rem; font-weight:600; letter-spacing:0.05em; transition:all 0.15s; text-transform:uppercase; }
+  .btn:disabled { opacity:0.5; cursor:not-allowed; }
+  .btn-primary { background:var(--accent); color:var(--bg); }
+  .btn-primary:hover:not(:disabled) { background:#00ffb3; }
+  .btn-danger { background:var(--red); color:white; }
+  .btn-danger:hover:not(:disabled) { background:#ff6680; }
+  .btn-outline { background:transparent; border:1px solid var(--border); color:var(--text-dim); }
+  .btn-outline:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+  .btn-sm { padding:0.35rem 0.7rem; font-size:0.75rem; }
+
+  .table-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:0.875rem; }
+  thead th { background:var(--surface2); font-family:var(--mono); font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--text-dim); padding:0.75rem 1rem; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
+  tbody tr { border-bottom:1px solid rgba(42,48,64,0.5); transition:background 0.1s; }
+  tbody tr:hover { background:var(--surface2); }
+  td { padding:0.75rem 1rem; vertical-align:middle; }
+
+  .badge { display:inline-block; padding:0.2rem 0.6rem; border-radius:2px; font-family:var(--mono); font-size:0.7rem; font-weight:600; text-transform:uppercase; }
+  .badge-green { background:rgba(0,229,160,0.15); color:var(--green); }
+  .badge-red { background:rgba(255,77,109,0.15); color:var(--red); }
+  .badge-yellow { background:rgba(255,209,102,0.15); color:var(--yellow); }
+
+  .qr-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:1rem; }
+  .qr-item { background:var(--surface2); border:1px solid var(--border); border-radius:4px; padding:1rem; text-align:center; }
+  .qr-code { background:white; padding:8px; display:inline-block; margin-bottom:0.75rem; border-radius:2px; }
+  .qr-name { font-family:var(--mono); font-size:0.8rem; margin-bottom:0.25rem; word-break:break-word; }
+  .qr-id { font-family:var(--mono); font-size:0.65rem; color:var(--text-dim); }
+
+  .scanner-area { background:var(--surface2); border:2px dashed var(--border); border-radius:6px; padding:2rem; text-align:center; margin-bottom:1.5rem; transition:border-color 0.2s; }
+  .scanner-area.scanning { border-color:var(--accent); animation:pulseBorder 1.5s infinite; }
+  @keyframes pulseBorder { 0%,100%{border-color:var(--accent)} 50%{border-color:transparent} }
+  .scanner-icon { font-size:3rem; margin-bottom:1rem; }
+  .scan-input-row { display:flex; gap:0.75rem; max-width:400px; margin:0 auto; }
+
+  .session-items { background:var(--surface2); border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+  .session-item { display:flex; align-items:center; padding:0.75rem 1rem; border-bottom:1px solid var(--border); gap:1rem; animation:slideIn 0.2s ease; }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-10px)} to{opacity:1;transform:translateX(0)} }
+  .session-item:last-child { border-bottom:none; }
+  .session-item-name { flex:1; font-weight:600; }
+  .session-item-qty { font-family:var(--mono); color:var(--accent2); font-weight:700; }
+
+  .log-entry { display:flex; align-items:center; gap:1rem; padding:0.6rem 0; border-bottom:1px solid rgba(42,48,64,0.4); font-size:0.85rem; }
+  .log-time { font-family:var(--mono); font-size:0.7rem; color:var(--text-dim); white-space:nowrap; min-width:100px; }
+
+  #toast { position:fixed; bottom:2rem; right:2rem; background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent); padding:1rem 1.5rem; font-family:var(--mono); font-size:0.85rem; border-radius:3px; z-index:10000; transform:translateY(100px); opacity:0; transition:all 0.3s; max-width:320px; }
+  #toast.show { transform:translateY(0); opacity:1; }
+  #toast.error { border-left-color:var(--red); }
+
+  .empty-state { text-align:center; padding:3rem; color:var(--text-dim); }
+  .empty-state .icon { font-size:2.5rem; margin-bottom:1rem; }
+
+  .stock-bar { background:var(--border); height:4px; border-radius:2px; overflow:hidden; width:80px; display:inline-block; vertical-align:middle; margin-right:0.5rem; }
+  .stock-bar-fill { height:100%; border-radius:2px; transition:width 0.3s; }
+
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.2s; }
+  .modal-overlay.open { opacity:1; pointer-events:all; }
+  .modal { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:2rem; max-width:500px; width:90%; }
+  .modal-title { font-family:var(--mono); font-size:1rem; font-weight:700; color:var(--accent); margin-bottom:1.5rem; }
+  .modal-footer { display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1.5rem; }
+
+  .qty-ctrl { display:flex; align-items:center; gap:0.5rem; }
+  .qty-btn { background:var(--surface2); border:1px solid var(--border); color:var(--text); width:32px; height:32px; border-radius:3px; cursor:pointer; font-size:1.1rem; display:flex; align-items:center; justify-content:center; transition:all 0.1s; }
+  .qty-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .qty-val { font-family:var(--mono); font-size:1.1rem; font-weight:700; min-width:40px; text-align:center; }
+
+  .worker-selector { display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; }
+  .worker-chip { padding:0.4rem 0.9rem; border-radius:20px; font-family:var(--mono); font-size:0.8rem; border:1px solid var(--border); cursor:pointer; transition:all 0.15s; color:var(--text-dim); }
+  .worker-chip.selected { background:rgba(0,229,160,0.15); border-color:var(--accent); color:var(--accent); }
+
+  #loading { position:fixed; inset:0; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:99999; transition:opacity 0.5s; }
+  #loading.hidden { opacity:0; pointer-events:none; }
+  .loading-logo { font-family:var(--mono); font-size:2rem; font-weight:700; color:var(--accent); margin-bottom:1rem; }
+  .loading-dots { display:flex; gap:0.5rem; }
+  .loading-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); animation:dotBounce 1.2s infinite; }
+  .loading-dot:nth-child(2) { animation-delay:0.2s; }
+  .loading-dot:nth-child(3) { animation-delay:0.4s; }
+  @keyframes dotBounce { 0%,80%,100%{transform:scale(0.8);opacity:0.5} 40%{transform:scale(1.2);opacity:1} }
+
+  @media (max-width:900px) { .layout{grid-template-columns:1fr} nav{display:none} .grid-4{grid-template-columns:1fr 1fr} .grid-2{grid-template-columns:1fr} .form-row.cols-3{grid-template-columns:1fr} }
+
+  /* ── MOBILE NAV ── */
+  #mobile-bottom-nav {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    z-index: 200;
+    padding: 0 0.25rem;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  #mobile-bottom-nav .mnav-items {
+    display: flex;
+    justify-content: space-around;
+    align-items: stretch;
+  }
+  .mnav-item {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 0.2rem; padding: 0.6rem 0.5rem; flex: 1;
+    cursor: pointer; color: var(--text-dim);
+    font-family: var(--mono); font-size: 0.58rem;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    transition: color 0.15s; border-top: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .mnav-item .micon { font-size: 1.25rem; line-height: 1; }
+  .mnav-item.active { color: var(--accent); border-top-color: var(--accent); }
+  .mnav-item:hover  { color: var(--text); }
+
+  /* More menu overlay */
+  #mobile-more-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 300;
+  }
+  #mobile-more-overlay.open { display: block; }
+  #mobile-more-panel {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding: 1rem 0;
+    padding-bottom: env(safe-area-inset-bottom, 1rem);
+  }
+  .more-handle {
+    width: 40px; height: 4px; border-radius: 2px;
+    background: var(--border); margin: 0 auto 1rem;
+  }
+  .more-nav-item {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0.85rem 1.5rem; cursor: pointer;
+    color: var(--text-dim); font-size: 0.95rem;
+    transition: all 0.1s;
+  }
+  .more-nav-item:hover  { background: var(--surface2); color: var(--text); }
+  .more-nav-item.active { color: var(--accent); }
+  .more-nav-item .micon { font-size: 1.1rem; width: 24px; text-align: center; }
+
+  /* On mobile add bottom padding so content not hidden behind nav */
+  @media (max-width: 900px) {
+    #mobile-bottom-nav { display: block; }
+    main { padding-bottom: 80px; }
+    header { padding: 0 1rem; }
+    .header-stats { gap: 1rem; }
+    .hstat-val { font-size: 0.85rem; }
+    .hstat-label { font-size: 0.55rem; }
+    #header-user-btn span:last-child { display: none; }
+  }
+
+  /* ── CATEGORIES ── */
+  .cat-filter-bar { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.25rem; align-items:center; }
+  .cat-chip { padding:0.3rem 0.85rem; border-radius:20px; font-family:var(--mono); font-size:0.75rem; border:1px solid var(--border); cursor:pointer; transition:all 0.15s; color:var(--text-dim); white-space:nowrap; }
+  .cat-chip:hover { border-color:var(--accent); color:var(--accent); }
+  .cat-chip.active { color:var(--bg); border-color:transparent; font-weight:600; }
+  .cat-summary-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:0.75rem; }
+  .cat-summary-card { background:var(--surface2); border:1px solid var(--border); border-radius:4px; padding:1rem; border-left:3px solid; }
+  .cat-summary-name { font-size:0.8rem; font-weight:600; margin-bottom:0.5rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cat-summary-val  { font-family:var(--mono); font-size:1.4rem; font-weight:700; line-height:1; }
+  .cat-summary-sub  { font-family:var(--mono); font-size:0.7rem; color:var(--text-dim); margin-top:0.25rem; }
+  .cat-badge { display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-family:var(--mono); font-size:0.68rem; font-weight:600; margin-right:0.25rem; }
+
+  .edit-modal-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem; }
+  @media(max-width:600px) { .edit-modal-grid { grid-template-columns:1fr; } }
+
+  /* ── CAMERA SCANNER ── */
+  #cam-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.92);
+    z-index: 60000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    display: none;
+  }
+  #cam-overlay.open { display: flex; }
+  #cam-container {
+    position: relative;
+    width: min(400px, 95vw);
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+  }
+  #cam-video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  #cam-canvas { display: none; }
+  /* Aiming crosshair */
+  #cam-aim {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .cam-corner {
+    position: absolute;
+    width: 40px; height: 40px;
+    border-color: var(--accent);
+    border-style: solid;
+    border-width: 0;
+  }
+  .cam-corner.tl { top:16px; left:16px;  border-top-width:3px;    border-left-width:3px; }
+  .cam-corner.tr { top:16px; right:16px; border-top-width:3px;    border-right-width:3px; }
+  .cam-corner.bl { bottom:16px; left:16px;  border-bottom-width:3px; border-left-width:3px; }
+  .cam-corner.br { bottom:16px; right:16px; border-bottom-width:3px; border-right-width:3px; }
+  .cam-line-h { position:absolute; width:60%; height:1px; background:rgba(0,229,160,0.4); }
+  .cam-line-v { position:absolute; height:60%; width:1px; background:rgba(0,229,160,0.4); }
+  #cam-result {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    margin-top: 1rem;
+    height: 1.2em;
+    letter-spacing: 0.05em;
+  }
+  #cam-status {
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+  }
+  #cam-close {
+    margin-top: 1.5rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 0.6rem 2rem;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  #cam-close:hover { border-color: var(--red); color: var(--red); }
+  .btn-camera {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.65rem 1rem;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 0.5rem;
+  }
+  .btn-camera:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── PIN LOGIN ── */
+  #login-screen { position:fixed; inset:0; background:var(--bg); z-index:50000; display:flex; align-items:center; justify-content:center; flex-direction:column; }
+  #login-screen.hidden { display:none; }
+  .login-box { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:2.5rem; width:360px; max-width:95vw; }
+  .login-logo { font-family:var(--mono); font-size:1.5rem; font-weight:700; color:var(--accent); text-align:center; margin-bottom:0.4rem; }
+  .login-sub  { text-align:center; color:var(--text-dim); font-size:0.82rem; margin-bottom:1.75rem; font-family:var(--mono); }
+  .user-select { display:flex; flex-direction:column; gap:0.5rem; margin-bottom:1.5rem; max-height:220px; overflow-y:auto; }
+  .user-btn { display:flex; align-items:center; gap:0.75rem; padding:0.75rem 1rem; background:var(--surface2); border:1px solid var(--border); border-radius:4px; cursor:pointer; color:var(--text); font-family:var(--sans); font-size:0.95rem; transition:all 0.15s; text-align:left; width:100%; }
+  .user-btn:hover { border-color:var(--accent); }
+  .user-btn.selected { border-color:var(--accent); background:rgba(0,229,160,0.08); }
+  .user-avatar { width:36px; height:36px; border-radius:50%; background:var(--border); display:flex; align-items:center; justify-content:center; font-size:1rem; flex-shrink:0; }
+  .user-role { font-size:0.68rem; color:var(--text-dim); font-family:var(--mono); margin-top:2px; }
+  .pin-label { font-family:var(--mono); font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:0.75rem; text-align:center; }
+  .pin-dots { display:flex; gap:0.75rem; justify-content:center; margin-bottom:1.5rem; }
+  .pin-dot { width:14px; height:14px; border-radius:50%; border:2px solid var(--border); background:transparent; transition:all 0.15s; }
+  .pin-dot.filled { background:var(--accent); border-color:var(--accent); box-shadow:0 0 8px var(--accent); }
+  .pin-dot.error  { background:var(--red); border-color:var(--red); animation:shake 0.4s; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+  .pin-pad { display:grid; grid-template-columns:repeat(3,1fr); gap:0.6rem; }
+  .pin-key { background:var(--surface2); border:1px solid var(--border); color:var(--text); height:56px; border-radius:4px; font-family:var(--mono); font-size:1.3rem; font-weight:600; cursor:pointer; transition:all 0.1s; display:flex; align-items:center; justify-content:center; }
+  .pin-key:hover  { background:var(--border); border-color:var(--accent); }
+  .pin-key:active { transform:scale(0.94); }
+  .pin-key.del  { font-size:1rem; color:var(--text-dim); }
+  .pin-key.enter { background:var(--accent); color:var(--bg); font-size:0.85rem; font-weight:700; }
+  .pin-key.enter:hover { background:#00ffb3; }
+  .login-error { text-align:center; color:var(--red); font-family:var(--mono); font-size:0.8rem; margin-top:0.75rem; min-height:1.2em; }
+  .header-user { display:flex; align-items:center; gap:0.5rem; font-family:var(--mono); font-size:0.8rem; cursor:pointer; padding:0.4rem 0.75rem; border:1px solid var(--border); border-radius:3px; transition:all 0.15s; color:var(--text-dim); }
+  .header-user:hover { border-color:var(--red); color:var(--red); }
+  .admin-only { display:none !important; }
+  .admin-only.visible { display:flex !important; }
+  .user-mgmt-card { background:var(--surface2); border:1px solid var(--border); border-radius:4px; padding:1rem 1.25rem; display:flex; align-items:center; gap:1rem; margin-bottom:0.75rem; }
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN SCREEN ── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">📦 SkladovkaPro</div>
+    <div class="login-sub">Vyberte uživatele a zadejte PIN</div>
+    <div class="user-select" id="login-user-list"></div>
+    <div class="pin-label">PIN kód</div>
+    <div class="pin-dots" id="pin-dots">
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div class="pin-pad">
+      <button class="pin-key" onclick="pinKey('1')">1</button>
+      <button class="pin-key" onclick="pinKey('2')">2</button>
+      <button class="pin-key" onclick="pinKey('3')">3</button>
+      <button class="pin-key" onclick="pinKey('4')">4</button>
+      <button class="pin-key" onclick="pinKey('5')">5</button>
+      <button class="pin-key" onclick="pinKey('6')">6</button>
+      <button class="pin-key" onclick="pinKey('7')">7</button>
+      <button class="pin-key" onclick="pinKey('8')">8</button>
+      <button class="pin-key" onclick="pinKey('9')">9</button>
+      <button class="pin-key del" onclick="pinDel()">⌫</button>
+      <button class="pin-key" onclick="pinKey('0')">0</button>
+      <button class="pin-key enter" onclick="pinEnter()">OK</button>
+    </div>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<div id="loading">
+  <div class="loading-logo">📦 SkladovkaPro</div>
+  <div style="color:var(--text-dim);font-family:var(--mono);font-size:0.8rem;margin-bottom:1.5rem">Připojování k Firebase...</div>
+  <div class="loading-dots"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div></div>
+</div>
+
+<div id="sync-bar"></div>
+<div id="offline-banner">⚠️ Offline – změny se uloží po obnovení připojení</div>
+
+<header>
+  <div class="logo">📦 SkladovkaPro <span>/ Live</span></div>
+  <div class="header-right">
+    <div id="header-user-btn" class="header-user" onclick="logout()" title="Odhlásit se">
+      <span id="header-user-name">—</span>
+      <span style="font-size:0.7rem;opacity:0.6">Odhlásit ⏻</span>
+    </div>
+    <div class="sync-status">
+      <div class="sync-dot" id="sync-dot"></div>
+      <span id="sync-label">Připojování...</span>
+    </div>
+    <div class="header-stats">
+      <div class="hstat"><span class="hstat-val" id="h-products">—</span><span class="hstat-label">Produktů</span></div>
+      <div class="hstat"><span class="hstat-val" id="h-total">—</span><span class="hstat-label">Celkem kusů</span></div>
+      <div class="hstat"><span class="hstat-val" id="h-moves">—</span><span class="hstat-label">Pohybů dnes</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <nav>
+    <div class="nav-section">
+      <div class="nav-label">Přehled</div>
+      <div class="nav-item active" onclick="showPage('dashboard')"><span class="nav-icon">📊</span> Dashboard</div>
+      <div class="nav-item" onclick="showPage('products')"><span class="nav-icon">📦</span> Produkty</div>
+      <div class="nav-item" onclick="showPage('qrcodes')"><span class="nav-icon">⬛</span> QR Kódy</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Operace</div>
+      <div class="nav-item" onclick="showPage('prijem')"><span class="nav-icon">📥</span> Příjem zboží</div>
+      <div class="nav-item" onclick="showPage('vydej')"><span class="nav-icon">📤</span> Výdej zboží</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Export / Import</div>
+      <div class="nav-item" onclick="showPage('log')"><span class="nav-icon">📋</span> Pohyby</div>
+      <div class="nav-item" onclick="exportExcel()"><span class="nav-icon">📊</span> Export Excel</div>
+      <div class="nav-item admin-only" id="nav-import" onclick="triggerImport()"><span class="nav-icon">📥</span> Import Excel</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Administrace</div>
+      <div class="nav-item admin-only" id="nav-admin" onclick="showPage('admin')"><span class="nav-icon">⚙️</span> Správa uživatelů</div>
+    </div>
+  </nav>
+
+  <main>
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-title">Dashboard</div>
+      <div class="page-sub">Stav skladu v reálném čase 🔴 LIVE – synchronizováno napříč všemi zařízeními</div>
+      <div class="grid-4" style="margin-bottom:1.5rem">
+        <div class="stat-card green"><div class="stat-val" id="stat-products">—</div><div class="stat-label">Produkty</div></div>
+        <div class="stat-card blue"><div class="stat-val" id="stat-total">—</div><div class="stat-label">Celkem kusů</div></div>
+        <div class="stat-card yellow"><div class="stat-val" id="stat-low">—</div><div class="stat-label">Nízký stav</div></div>
+        <div class="stat-card red"><div class="stat-val" id="stat-zero">—</div><div class="stat-label">Vyprodáno</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">📂 Souhrn podle kategorií</div>
+        <div class="cat-summary-grid" id="dash-cat-summary"><div class="empty-state"><div class="icon">⏳</div><p>Načítání...</p></div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card"><div class="card-title">📦 Stav zásob</div><div id="dash-stock-list"><div class="empty-state"><div class="icon">⏳</div><p>Načítání...</p></div></div></div>
+        <div class="card"><div class="card-title">🕒 Poslední pohyby</div><div id="dash-log"><div class="empty-state"><div class="icon">⏳</div><p>Načítání...</p></div></div></div>
+      </div>
+    </div>
+
+    <!-- PRODUCTS -->
+    <div class="page" id="page-products">
+      <div class="page-title">Správa produktů</div>
+      <div class="page-sub">Přidávejte a spravujte skladové položky</div>
+      <div class="card">
+        <div class="card-title">➕ Nový produkt</div>
+        <div class="form-row cols-3">
+          <div class="form-group"><label>Název produktu</label><input type="text" id="p-name" placeholder=""></div>
+          <div class="form-group"><label>SKU / Kód</label><input type="text" id="p-sku" placeholder=""></div>
+          <div class="form-group"><label>Kategorie</label>
+            <select id="p-cat"><option value="">— vyberte kategorii —</option></select>
+          </div>
+        </div>
+        <div class="form-row cols-3">
+          <div class="form-group"><label>Počáteční množství</label><input type="number" id="p-qty" placeholder="" min="0"></div>
+          <div class="form-group"><label>Minimální zásoba</label><input type="number" id="p-min" placeholder="" min="0"></div>
+          <div class="form-group"><label>Jednotka</label>
+            <select id="p-unit"><option>ks</option><option>kg</option><option>m</option><option>l</option><option>bal</option><option>pár</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Umístění v skladu</label><input type="text" id="p-loc" placeholder="např. Řada A, Police 3"></div>
+        </div>
+        <button class="btn btn-primary" onclick="addProduct()">➕ Přidat produkt</button>
+      </div>
+      <div class="card">
+        <div class="card-title">📦 Všechny produkty</div>
+        <div style="margin-bottom:1rem;display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+          <input type="text" id="product-search" placeholder="🔍 Hledat název / SKU..." oninput="renderProductsTable()" style="max-width:260px">
+        </div>
+        <div class="cat-filter-bar" id="products-cat-filter"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Název</th><th>SKU</th><th>Kategorie</th><th>Stav</th><th>Min.</th><th>Jednotka</th><th>Umístění</th><th></th></tr></thead>
+            <tbody id="products-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- QR KÓDY -->
+    <div class="page" id="page-qrcodes">
+      <div class="page-title">QR Kódy</div>
+      <div class="page-sub">Vytiskněte a přilepte na police nebo zboží</div>
+      <div style="margin-bottom:1.5rem;display:flex;gap:0.75rem">
+        <button class="btn btn-primary" onclick="printAllQR()">🖨️ Tisknout vše</button>
+        <button class="btn btn-outline" onclick="renderQRCodes()">🔄 Obnovit</button>
+      </div>
+      <div class="qr-grid" id="qr-grid"></div>
+    </div>
+
+    <!-- PŘÍJEM -->
+    <div class="page" id="page-prijem">
+      <div class="page-title">📥 Příjem zboží</div>
+      <div class="page-sub">Naskladnění pomocí Bluetooth čtečky nebo manuálně</div>
+      <div class="card">
+        <div class="card-title">👤 Zaměstnanec</div>
+        <div class="worker-selector" id="workers-prijem"></div>
+        <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.5rem">
+          <input type="text" id="new-worker-prijem" placeholder="Přidat zaměstnance..." style="max-width:250px" onkeydown="if(event.key==='Enter')addWorker('prijem')">
+          <button class="btn btn-outline btn-sm" onclick="addWorker('prijem')">+ Přidat</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">📷 Skenování</div>
+        <div class="cat-filter-bar" id="scan-cat-prijem" style="margin-bottom:0.5rem"></div>
+        <div class="scanner-area" id="scan-area-prijem">
+          <div class="scanner-icon">📷</div>
+          <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.9rem">Nasměrujte Bluetooth čtečku, zadejte kód ručně, nebo použijte kameru</p>
+          <div class="scan-input-row">
+            <input type="text" id="scan-prijem" placeholder="QR kód / ID produktu..." onkeydown="if(event.key==='Enter')scanProduct('prijem')" onfocus="setScanActive('prijem',true)" onblur="setScanActive('prijem',false)">
+            <button class="btn btn-primary" onclick="scanProduct('prijem')">Načíst</button>
+            <button class="btn-camera" onclick="openCamera('prijem')" title="Skenovat kamerou">📱 Kamera</button>
+          </div>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-dim)">💡 Bluetooth čtečka se chová jako klávesnice – automaticky odešle Enter po naskenování</p>
+      </div>
+      <div class="card" id="session-prijem-card" style="display:none">
+        <div class="card-title">📋 Aktuální příjem</div>
+        <div class="session-items" id="session-prijem-list"></div>
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1rem">
+          <button class="btn btn-outline" onclick="clearSession('prijem')">❌ Zrušit</button>
+          <button class="btn btn-primary" id="btn-confirm-prijem" onclick="confirmSession('prijem')">✅ Potvrdit příjem</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- VÝDEJ -->
+    <div class="page" id="page-vydej">
+      <div class="page-title">📤 Výdej zboží</div>
+      <div class="page-sub">Vyskladnění pomocí Bluetooth čtečky nebo manuálně</div>
+      <div class="card">
+        <div class="card-title">👤 Zaměstnanec</div>
+        <div class="worker-selector" id="workers-vydej"></div>
+        <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.5rem">
+          <input type="text" id="new-worker-vydej" placeholder="Přidat zaměstnance..." style="max-width:250px" onkeydown="if(event.key==='Enter')addWorker('vydej')">
+          <button class="btn btn-outline btn-sm" onclick="addWorker('vydej')">+ Přidat</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">📷 Skenování</div>
+        <div class="cat-filter-bar" id="scan-cat-vydej" style="margin-bottom:0.5rem"></div>
+        <div class="scanner-area" id="scan-area-vydej">
+          <div class="scanner-icon">📷</div>
+          <p style="color:var(--text-dim);margin-bottom:1rem;font-size:0.9rem">Nasměrujte Bluetooth čtečku, zadejte kód ručně, nebo použijte kameru</p>
+          <div class="scan-input-row">
+            <input type="text" id="scan-vydej" placeholder="QR kód / ID produktu..." onkeydown="if(event.key==='Enter')scanProduct('vydej')" onfocus="setScanActive('vydej',true)" onblur="setScanActive('vydej',false)">
+            <button class="btn btn-primary" onclick="scanProduct('vydej')">Načíst</button>
+            <button class="btn-camera" onclick="openCamera('vydej')" title="Skenovat kamerou">📱 Kamera</button>
+          </div>
+        </div>
+        <p style="font-size:0.8rem;color:var(--text-dim)">💡 Bluetooth čtečka se chová jako klávesnice – automaticky odešle Enter po naskenování</p>
+      </div>
+      <!-- Produkty v kategorii pro rychlý výběr -->
+      <div class="card" id="cat-products-vydej" style="display:none">
+        <div class="card-title">📦 Produkty ve vybrané kategorii</div>
+        <div id="cat-products-vydej-list"></div>
+      </div>
+      <div class="card" id="session-vydej-card" style="display:none">
+        <div class="card-title">📋 Aktuální výdej</div>
+        <div class="session-items" id="session-vydej-list"></div>
+        <div style="display:flex;justify-content:flex-end;gap:0.75rem;margin-top:1rem">
+          <button class="btn btn-outline" onclick="clearSession('vydej')">❌ Zrušit</button>
+          <button class="btn btn-danger" id="btn-confirm-vydej" onclick="confirmSession('vydej')">✅ Potvrdit výdej</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="page" id="page-log">
+      <div class="page-title">📋 Pohyby zboží</div>
+      <div class="page-sub">Kompletní historie – synchronizováno z Firebase</div>
+      <div style="margin-bottom:1.5rem">
+        <button class="btn btn-primary" onclick="exportExcel()">📊 Export do Excelu</button>
+      </div>
+      <div class="card">
+        <div class="card-title">📜 Historie pohybů</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum & čas</th><th>Typ</th><th>Produkt</th><th>Množství</th><th>Zaměstnanec</th><th>Stav po</th></tr></thead>
+            <tbody id="log-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN -->
+    <div class="page" id="page-admin">
+      <div class="page-title">⚙️ Administrace</div>
+      <div class="page-sub">Správa uživatelů, kategorií a nastavení systému</div>
+
+      <div class="card">
+        <div class="card-title">➕ Nový uživatel</div>
+        <div class="form-row cols-3">
+          <div class="form-group"><label>Jméno</label><input type="text" id="nu-name" placeholder="např. Karel Novák"></div>
+          <div class="form-group"><label>Role</label>
+            <select id="nu-role">
+              <option value="worker">Skladník</option>
+              <option value="admin">Administrátor</option>
+            </select>
+          </div>
+          <div class="form-group"><label>PIN (4 číslice)</label><input type="password" id="nu-pin" placeholder="••••" maxlength="4" inputmode="numeric"></div>
+        </div>
+        <button class="btn btn-primary" onclick="addUser()">➕ Přidat uživatele</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">👥 Uživatelé systému</div>
+        <div id="users-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔑 Změna vlastního PINu</div>
+        <div class="form-row cols-3">
+          <div class="form-group"><label>Nový PIN</label><input type="password" id="change-pin" placeholder="••••" maxlength="4" inputmode="numeric"></div>
+          <div class="form-group"><label>Potvrdit PIN</label><input type="password" id="change-pin2" placeholder="••••" maxlength="4" inputmode="numeric"></div>
+          <div class="form-group" style="justify-content:flex-end;padding-top:1.3rem"><button class="btn btn-primary" onclick="changeOwnPin()">💾 Uložit PIN</button></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📂 Správa kategorií</div>
+        <div style="display:flex;gap:0.75rem;margin-bottom:1.25rem;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="flex:1;min-width:160px">
+            <label>Název kategorie</label>
+            <input type="text" id="nc-name" placeholder="např. Pneumatika" maxlength="40">
+          </div>
+          <div class="form-group">
+            <label>Barva</label>
+            <input type="color" id="nc-color" value="#4d9fff" style="width:56px;height:38px;padding:2px 4px;cursor:pointer">
+          </div>
+          <button class="btn btn-primary" onclick="addCategory()">➕ Přidat kategorii</button>
+        </div>
+        <div id="categories-list"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="qty-modal">
+  <div class="modal">
+    <div class="modal-title">Zadejte množství</div>
+    <div style="margin-bottom:1.5rem;padding:1rem;background:var(--surface2);border-radius:4px">
+      <div id="modal-product-name" style="font-weight:600;margin-bottom:0.25rem"></div>
+      <div id="modal-product-stock" style="font-family:var(--mono);font-size:0.8rem;color:var(--text-dim)"></div>
+    </div>
+    <label style="display:block;margin-bottom:0.75rem">Množství</label>
+    <div class="qty-ctrl" style="margin-bottom:1.5rem">
+      <button class="qty-btn" onclick="changeQty(-1)">−</button>
+      <span class="qty-val" id="modal-qty">1</span>
+      <button class="qty-btn" onclick="changeQty(1)">+</button>
+      <input type="number" id="modal-qty-input" value="1" min="1" style="width:80px;margin-left:0.5rem" oninput="document.getElementById('modal-qty').textContent=this.value">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Zrušit</button>
+      <button class="btn btn-primary" id="modal-confirm-btn" onclick="confirmQty()">Přidat</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── EDIT PRODUCT MODAL ── -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title">✏️ Upravit produkt</div>
+    <div class="edit-modal-grid">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Název produktu</label>
+        <input type="text" id="edit-name" placeholder="Název">
+      </div>
+      <div class="form-group">
+        <label>SKU / Kód</label>
+        <input type="text" id="edit-sku" placeholder="SKU">
+      </div>
+      <div class="form-group">
+        <label>Kategorie</label>
+        <select id="edit-cat"></select>
+      </div>
+      <div class="form-group">
+        <label>Množství na skladě</label>
+        <input type="number" id="edit-qty" min="0">
+      </div>
+      <div class="form-group">
+        <label>Minimální zásoba</label>
+        <input type="number" id="edit-min" min="0">
+      </div>
+      <div class="form-group">
+        <label>Jednotka</label>
+        <select id="edit-unit">
+          <option>ks</option><option>kg</option><option>m</option>
+          <option>l</option><option>bal</option><option>pár</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Umístění</label>
+        <input type="text" id="edit-loc" placeholder="např. Řada A, Police 3">
+      </div>
+    </div>
+    <div style="padding:0.75rem;background:var(--surface2);border-radius:4px;margin-bottom:1rem;font-family:var(--mono);font-size:0.75rem;color:var(--text-dim)">
+      ⚠️ Změna množství zde přímo upraví stav skladu bez záznamu v logu. Pro příjem/výdej použijte příslušné stránky.
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeEditModal()">Zrušit</button>
+      <button class="btn btn-primary" onclick="saveEditProduct()">💾 Uložit změny</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── IMPORT MODAL ── -->
+<input type="file" id="import-file-input" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(event)">
+
+<div class="modal-overlay" id="import-modal">
+  <div class="modal" style="max-width:700px;max-height:90vh;overflow-y:auto">
+    <div class="modal-title">📥 Import produktů z Excelu</div>
+
+    <!-- Step 1: upload -->
+    <div id="import-step-upload">
+      <div style="background:var(--surface2);border:2px dashed var(--border);border-radius:6px;padding:2rem;text-align:center;margin-bottom:1.5rem;cursor:pointer" onclick="document.getElementById('import-file-input').click()">
+        <div style="font-size:2.5rem;margin-bottom:0.75rem">📂</div>
+        <div style="font-weight:600;margin-bottom:0.5rem">Klikněte pro výběr souboru</div>
+        <div style="font-size:0.8rem;color:var(--text-dim)">Podporované formáty: .xlsx, .xls</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:4px;padding:1rem;font-size:0.82rem;color:var(--text-dim);font-family:var(--mono)">
+        <div style="color:var(--accent);margin-bottom:0.5rem;font-weight:600">Očekávaný formát (list "Stav skladu"):</div>
+        <div>ID · Název · SKU · Kategorie · Množství · Min. · Jednotka · Umístění · Stav</div>
+        <div style="margin-top:0.5rem;color:var(--text-dim)">💡 Použijte exportovaný soubor jako šablonu. Sloupec Stav se ignoruje.</div>
+      </div>
+    </div>
+
+    <!-- Step 2: preview -->
+    <div id="import-step-preview" style="display:none">
+      <div id="import-summary" style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap"></div>
+      <div style="font-family:var(--mono);font-size:0.75rem;color:var(--text-dim);margin-bottom:0.75rem">Náhled importovaných dat (max. 10 řádků):</div>
+      <div class="table-wrap" style="margin-bottom:1rem">
+        <table>
+          <thead><tr><th>Název</th><th>SKU</th><th>Kategorie</th><th>Množství</th><th>Min.</th><th>Jednotka</th><th>Umístění</th><th>Stav</th></tr></thead>
+          <tbody id="import-preview-tbody"></tbody>
+        </table>
+      </div>
+      <div style="background:rgba(255,209,102,0.1);border:1px solid rgba(255,209,102,0.3);border-radius:4px;padding:0.75rem;font-size:0.82rem;color:var(--yellow);margin-bottom:1rem">
+        ⚠️ <strong>Existující produkty se stejným SKU budou aktualizovány.</strong> Nové SKU budou přidány jako nové produkty.
+      </div>
+      <div id="import-error" style="color:var(--red);font-family:var(--mono);font-size:0.8rem;margin-bottom:0.75rem;display:none"></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeImportModal()">Zrušit</button>
+      <button class="btn btn-primary" id="import-confirm-btn" style="display:none" onclick="confirmImport()">✅ Importovat</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CAMERA SCANNER OVERLAY ── -->
+<div id="cam-overlay">
+  <div id="cam-container">
+    <video id="cam-video" autoplay playsinline muted></video>
+    <canvas id="cam-canvas"></canvas>
+    <div id="cam-aim">
+      <div class="cam-corner tl"></div>
+      <div class="cam-corner tr"></div>
+      <div class="cam-corner bl"></div>
+      <div class="cam-corner br"></div>
+      <div class="cam-line-h"></div>
+      <div class="cam-line-v"></div>
+    </div>
+  </div>
+  <div id="cam-result"></div>
+  <div id="cam-status">Nasměrujte kameru na QR kód</div>
+  <button id="cam-close" onclick="closeCamera()">✕ Zavřít</button>
+</div>
+
+<!-- ── MOBILE BOTTOM NAV ── -->
+<div id="mobile-bottom-nav">
+  <div class="mnav-items">
+    <div class="mnav-item active" id="mnav-dashboard" onclick="showPage('dashboard')">
+      <span class="micon">📊</span><span>Přehled</span>
+    </div>
+    <div class="mnav-item" id="mnav-prijem" onclick="showPage('prijem')">
+      <span class="micon">📥</span><span>Příjem</span>
+    </div>
+    <div class="mnav-item" id="mnav-vydej" onclick="showPage('vydej')">
+      <span class="micon">📤</span><span>Výdej</span>
+    </div>
+    <div class="mnav-item" id="mnav-products" onclick="showPage('products')">
+      <span class="micon">📦</span><span>Produkty</span>
+    </div>
+    <div class="mnav-item" id="mnav-more" onclick="openMoreMenu()">
+      <span class="micon">☰</span><span>Více</span>
+    </div>
+  </div>
+</div>
+
+<!-- More menu slide-up -->
+<div id="mobile-more-overlay" onclick="closeMoreMenu()">
+  <div id="mobile-more-panel" onclick="event.stopPropagation()">
+    <div class="more-handle"></div>
+    <div class="more-nav-item" onclick="closeMoreMenu();showPage('qrcodes')">
+      <span class="micon">⬛</span> QR Kódy
+    </div>
+    <div class="more-nav-item" onclick="closeMoreMenu();showPage('log')">
+      <span class="micon">📋</span> Pohyby zboží
+    </div>
+    <div class="more-nav-item" onclick="closeMoreMenu();exportExcel()">
+      <span class="micon">📊</span> Export do Excelu
+    </div>
+    <div class="more-nav-item admin-only" onclick="closeMoreMenu();triggerImport()">
+      <span class="micon">📥</span> Import z Excelu
+    </div>
+    <div class="more-nav-item admin-only" id="mnav-more-admin" onclick="closeMoreMenu();showPage('admin')">
+      <span class="micon">⚙️</span> Správa uživatelů
+    </div>
+    <div class="more-nav-item" style="color:var(--red)" onclick="closeMoreMenu();logout()">
+      <span class="micon">⏻</span> Odhlásit se
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDLffqPcXennj8eEqsYIsW40kCw8kJftSU",
+  authDomain: "dm-skladkapro.firebaseapp.com",
+  projectId: "dm-skladkapro",
+  storageBucket: "dm-skladkapro.firebasestorage.app",
+  messagingSenderId: "951211360590",
+  appId: "1:951211360590:web:08a70798bad05f0b21de1f"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Local mirrors
+window._products = [];
+window._log = [];
+window._workers = { prijem: ['Jan Novák', 'Marie Kovářová'], vydej: ['Jan Novák', 'Marie Kovářová'] };
+window._activeWorker = { prijem: null, vydej: null };
+window._sessions = { prijem: [], vydej: [] };
+
+// Categories – loaded from Firestore, seeded with defaults on first run
+window._categories = [];
+window._activeCatFilter = { products: null, prijem: null, vydej: null };
+
+const DEFAULT_CATS = [
+  { id:'naradí',    name:'Nářadí',            color:'#4d9fff' },
+  { id:'spotrebni', name:'Spotřební materiál', color:'#00e5a0' },
+  { id:'oopp',      name:'OOPP',              color:'#ff6b35' },
+  { id:'elektro',   name:'Elektro',           color:'#ffd166' },
+  { id:'spojovaci', name:'Spojovací materiál',color:'#a78bfa' },
+  { id:'hydraulika',name:'Hydraulika',        color:'#34d399' },
+  { id:'ostatni',   name:'Ostatní',           color:'#6b7a9a' },
+];
+
+// Realtime listener for categories
+onSnapshot(collection(db,'categories'), snap => {
+  if (snap.empty) {
+    // Seed defaults on first run
+    DEFAULT_CATS.forEach(c => setDoc(doc(db,'categories',c.id), c));
+    return;
+  }
+  window._categories = snap.docs.map(d=>({firestoreId:d.id,...d.data()}))
+    .sort((a,b)=>a.name.localeCompare(b.name,'cs'));
+  refreshCategorySelects();
+  refreshAllCatFilters();
+  renderCategoriesAdmin();
+  const pid = document.querySelector('.page.active')?.id?.replace('page-','');
+  if (pid==='dashboard') renderDashCatSummary();
+});
+
+// Category helpers
+function getCatColor(catName) {
+  const c = window._categories.find(c=>c.name===catName);
+  return c ? c.color : '#6b7a9a';
+}
+
+function refreshCategorySelects() {
+  const opts = window._categories.map(c=>`<option value="${c.name}">${c.name}</option>`).join('');
+  const el = document.getElementById('p-cat');
+  if (el) el.innerHTML = '<option value="">— vyberte kategorii —</option>' + opts;
+}
+
+function refreshAllCatFilters() {
+  renderCatFilterBar('products-cat-filter','products');
+  renderCatFilterBar('scan-cat-prijem','prijem');
+  renderCatFilterBar('scan-cat-vydej','vydej');
+}
+
+function renderCatFilterBar(containerId, stateKey) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const active = window._activeCatFilter[stateKey];
+  el.innerHTML =
+    `<span class="cat-chip ${!active?'active':''}" style="${!active?'background:#2a3040;color:var(--text)':''}" onclick="setCatFilter('${stateKey}',null)">Vše</span>` +
+    window._categories.map(c =>
+      `<span class="cat-chip ${active===c.name?'active':''}"
+        style="${active===c.name?`background:${c.color};color:#0d0f14`:`border-color:${c.color}55;color:${c.color}`}"
+        onclick="setCatFilter('${stateKey}','${c.name}')">${c.name}</span>`
+    ).join('');
+}
+
+window.setCatFilter = function(key, cat) {
+  window._activeCatFilter[key] = cat;
+  if (key==='products') { renderCatFilterBar('products-cat-filter','products'); renderProductsTable(); }
+  if (key==='prijem')   { renderCatFilterBar('scan-cat-prijem','prijem'); }
+  if (key==='vydej')    { renderCatFilterBar('scan-cat-vydej','vydej');   renderCatProductList('vydej'); }
+};
+
+// Admin: add / delete / render categories
+window.addCategory = async function() {
+  if (window._currentUser?.role !== 'admin') { toast('❌ Pouze admin', true); return; }
+  const name  = document.getElementById('nc-name').value.trim();
+  const color = document.getElementById('nc-color').value;
+  if (!name) { toast('Zadejte název kategorie', true); return; }
+  if (window._categories.find(c=>c.name.toLowerCase()===name.toLowerCase())) {
+    toast('⚠️ Kategorie již existuje', true); return;
+  }
+  setSyncing(true);
+  const id = 'cat_' + name.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'') + '_' + Date.now();
+  try {
+    await setDoc(doc(db,'categories',id), { id, name, color });
+    toast(`✅ Kategorie "${name}" přidána`);
+    document.getElementById('nc-name').value = '';
+    document.getElementById('nc-color').value = '#4d9fff';
+  } catch(e) { toast('❌ '+e.message, true); }
+  setSyncing(false);
+};
+
+window.deleteCategory = async function(fsId, catName) {
+  if (window._currentUser?.role !== 'admin') return;
+  const usedBy = window._products.filter(p=>p.cat===catName).length;
+  if (usedBy > 0) {
+    if (!confirm(`Kategorie "${catName}" je přiřazena ${usedBy} produktům. Opravdu smazat?`)) return;
+  } else {
+    if (!confirm(`Smazat kategorii "${catName}"?`)) return;
+  }
+  setSyncing(true);
+  try { await deleteDoc(doc(db,'categories',fsId)); toast(`Kategorie "${catName}" smazána`); }
+  catch(e) { toast('❌ '+e.message, true); }
+  setSyncing(false);
+};
+
+window.updateCategoryColor = async function(fsId, color) {
+  setSyncing(true);
+  try { await updateDoc(doc(db,'categories',fsId), { color }); }
+  catch(e) { toast('❌ '+e.message, true); }
+  setSyncing(false);
+};
+
+window.renderCategoriesAdmin = function() {
+  const el = document.getElementById('categories-list');
+  if (!el) return;
+  if (!window._categories.length) {
+    el.innerHTML='<div class="empty-state"><div class="icon">📂</div><p>Žádné kategorie</p></div>'; return;
+  }
+  el.innerHTML = window._categories.map(c => {
+    const usedBy = window._products.filter(p=>p.cat===c.name).length;
+    return `<div class="user-mgmt-card">
+      <input type="color" value="${c.color}"
+        style="width:32px;height:32px;border:none;background:transparent;cursor:pointer;padding:0;border-radius:4px"
+        title="Změnit barvu"
+        onchange="updateCategoryColor('${c.firestoreId}',this.value)"
+        oninput="this.closest('.user-mgmt-card').querySelector('.cat-name-preview').style.color=this.value">
+      <div style="flex:1">
+        <div class="cat-name-preview" style="font-weight:600;color:${c.color}">${c.name}</div>
+        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-dim)">${usedBy} produkt${usedBy===1?'':'ů'}</div>
+      </div>
+      <span class="cat-badge" style="background:${c.color}22;color:${c.color}">${usedBy} pol.</span>
+      <button class="btn btn-outline btn-sm" onclick="deleteCategory('${c.firestoreId}','${c.name.replace(/'/g,"\\'")}')">🗑️</button>
+    </div>`;
+  }).join('');
+};
+
+function renderCatProductList(type) {
+  const cat = window._activeCatFilter[type];
+  const card = document.getElementById('cat-products-vydej');
+  const listEl = document.getElementById('cat-products-vydej-list');
+  if (type !== 'vydej' || !card) return;
+  if (!cat) { card.style.display='none'; return; }
+  const products = window._products.filter(p=>p.cat===cat);
+  card.style.display = products.length ? 'block' : 'none';
+  if (!products.length) return;
+  listEl.innerHTML = products.map(p=>{
+    const badge = p.qty===0?'badge-red':p.qty<=p.min?'badge-yellow':'badge-green';
+    return `<div style="display:flex;align-items:center;padding:0.6rem 0.5rem;border-bottom:1px solid rgba(42,48,64,0.4);gap:0.75rem;cursor:pointer" onclick="quickAddToSession('${type}','${p.id}')">
+      <span style="flex:1;font-weight:600;font-size:0.9rem">${p.name}</span>
+      <span class="badge ${badge}">${p.qty} ${p.unit}</span>
+      <button class="btn btn-outline btn-sm">+ Přidat</button>
+    </div>`;
+  }).join('');
+}
+
+window.quickAddToSession = function(type, productId) {
+  const product = window._products.find(p=>p.id===productId);
+  if (!product) return;
+  if (!window._activeWorker[type]) { toast('❌ Vyberte zaměstnance', true); return; }
+  showQtyModal(product, type);
+};
+
+function renderDashCatSummary() {
+  const el = document.getElementById('dash-cat-summary');
+  if (!el) return;
+  if (!window._products.length) { el.innerHTML='<div class="empty-state"><div class="icon">📂</div><p>Žádné produkty</p></div>'; return; }
+  const summaries = window._categories.map(cat => {
+    const ps = window._products.filter(p=>p.cat===cat.name);
+    if (!ps.length) return null;
+    const total = ps.reduce((s,p)=>s+(p.qty||0),0);
+    const low   = ps.filter(p=>p.qty>0&&p.qty<=p.min).length;
+    const zero  = ps.filter(p=>p.qty===0).length;
+    return { cat, count:ps.length, total, low, zero };
+  }).filter(Boolean);
+  if (!summaries.length) { el.innerHTML='<div class="empty-state"><div class="icon">📂</div><p>Přidejte produkty</p></div>'; return; }
+  el.innerHTML = summaries.map(s=>`
+    <div class="cat-summary-card" style="cursor:pointer;border-left-color:${s.cat.color}" onclick="showPage('products');setCatFilter('products','${s.cat.name.replace(/'/g,"\\'")}')">
+      <div class="cat-summary-name" style="color:${s.cat.color}">${s.cat.name}</div>
+      <div class="cat-summary-val">${s.count} <span style="font-size:0.9rem;color:var(--text-dim)">pol.</span></div>
+      <div class="cat-summary-sub">${s.total} ks celkem</div>
+      ${s.zero>0?`<span class="cat-badge" style="background:rgba(255,77,109,0.15);color:#ff4d6d;margin-top:0.4rem;display:inline-block">${s.zero} vyprodáno</span>`:''}
+      ${s.low>0?`<span class="cat-badge" style="background:rgba(255,209,102,0.15);color:#ffd166">${s.low} nízký stav</span>`:''}
+    </div>`).join('');
+}
+
+// Sync UI
+function setSyncing(on) {
+  document.getElementById('sync-bar').className = on ? 'syncing' : '';
+  const dot = document.getElementById('sync-dot'), lbl = document.getElementById('sync-label');
+  if (on) { dot.className='sync-dot syncing'; lbl.textContent='Ukládání...'; }
+  else    { dot.className='sync-dot online';  lbl.textContent='Online — data živá'; }
+}
+
+window.addEventListener('online',  () => { document.getElementById('offline-banner').style.display='none'; setSyncing(false); });
+window.addEventListener('offline', () => { document.getElementById('offline-banner').style.display='block'; document.getElementById('sync-dot').className='sync-dot'; document.getElementById('sync-label').textContent='Offline'; });
+
+// Hide loading after data or timeout
+let pReady=false, lReady=false;
+function checkReady() {
+  if (pReady && lReady) {
+    const el = document.getElementById('loading');
+    el.classList.add('hidden');
+    setTimeout(()=>el.style.display='none', 600);
+  }
+}
+setTimeout(()=>{ document.getElementById('loading').classList.add('hidden'); setTimeout(()=>document.getElementById('loading').style.display='none',600); }, 5000);
+
+// ── Realtime listeners ──────────────────────────────────────────────────────
+onSnapshot(collection(db,'products'), snap => {
+  window._products = snap.docs.map(d=>({firestoreId:d.id,...d.data()}));
+  pReady = true;
+  refreshCategorySelects();
+  refreshAllCatFilters();
+  updateHeader();
+  const pid = document.querySelector('.page.active')?.id?.replace('page-','');
+  if (pid==='dashboard') renderDashboard();
+  if (pid==='products')  renderProductsTable();
+  if (pid==='qrcodes')   renderQRCodes();
+  checkReady();
+});
+
+onSnapshot(query(collection(db,'log'),orderBy('time','desc'),limit(300)), snap => {
+  window._log = snap.docs.map(d=>({firestoreId:d.id,...d.data()}));
+  lReady = true;
+  updateHeader();
+  const pid = document.querySelector('.page.active')?.id?.replace('page-','');
+  if (pid==='dashboard') renderDashboard();
+  if (pid==='log')       renderLog();
+  checkReady();
+});
+
+onSnapshot(doc(db,'config','workers'), snap => {
+  if (snap.exists() && snap.data().list) {
+    const list = snap.data().list;
+    window._workers.prijem = list;
+    window._workers.vydej  = list;
+    renderWorkers('prijem');
+    renderWorkers('vydej');
+  }
+});
+
+// ── Products ────────────────────────────────────────────────────────────────
+window.addProduct = async function() {
+  const name = document.getElementById('p-name').value.trim();
+  if (!name) { toast('Zadejte název produktu', true); return; }
+  const catVal = document.getElementById('p-cat').value;
+  if (!catVal) { toast('Vyberte kategorii', true); return; }
+  setSyncing(true);
+  const qty = parseInt(document.getElementById('p-qty').value)||0;
+  const id  = 'P'+Date.now();
+  const product = {
+    id, name,
+    sku:  document.getElementById('p-sku').value.trim() || id,
+    cat:  catVal,
+    qty,
+    min:  parseInt(document.getElementById('p-min').value)||0,
+    unit: document.getElementById('p-unit').value,
+    loc:  document.getElementById('p-loc').value.trim(),
+    created: new Date().toISOString()
+  };
+  try {
+    await setDoc(doc(db,'products',id), product);
+    if (qty>0) await addLogEntry('prijem', product, qty, 'Počáteční stav');
+    toast(`✅ Produkt "${name}" přidán`);
+    ['p-name','p-sku','p-loc'].forEach(i=>document.getElementById(i).value='');
+    ['p-qty','p-min'].forEach(i=>document.getElementById(i).value='');
+    document.getElementById('p-cat').value='';
+  } catch(e) { toast('❌ Chyba: '+e.message, true); }
+  setSyncing(false);
+};
+
+window.deleteProduct = async function(fsId) {
+  if (!confirm('Opravdu smazat produkt?')) return;
+  setSyncing(true);
+  try { await deleteDoc(doc(db,'products',fsId)); toast('Produkt smazán'); }
+  catch(e) { toast('❌ '+e.message, true); }
+  setSyncing(false);
+};
+
+// ── Log ─────────────────────────────────────────────────────────────────────
+async function addLogEntry(type, product, qty, worker) {
+  await addDoc(collection(db,'log'), {
+    time: new Date().toISOString(),
+    timeTs: serverTimestamp(),
+    type, product:product.name, productId:product.id,
+    sku:product.sku, qty, unit:product.unit,
+    stockAfter: product.qty,
+    worker: worker||'—'
+  });
+}
+
+// ── AUTH / PIN ────────────────────────────────────────────────────────────────
+window._currentUser = null;
+window._users = [];   // loaded from Firestore
+let pinBuffer = '';
+
+// Simple hash (not cryptographic, but fine for warehouse PIN)
+function hashPin(pin) {
+  let h = 0;
+  for (let i = 0; i < pin.length; i++) { h = ((h << 5) - h) + pin.charCodeAt(i); h |= 0; }
+  return 'h' + Math.abs(h).toString(36);
+}
+
+// Render login user list
+function renderLoginUsers() {
+  const el = document.getElementById('login-user-list');
+  if (!window._users.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-dim);font-size:0.85rem;padding:1rem">Načítání uživatelů...</div>';
+    return;
+  }
+  el.innerHTML = window._users.map(u => `
+    <button class="user-btn ${window._loginSelectedUser?.id===u.id?'selected':''}" onclick="loginSelectUser('${u.id}')">
+      <div class="user-avatar">${u.role==='admin'?'👑':'👤'}</div>
+      <div><div style="font-weight:600">${u.name}</div><div class="user-role">${u.role==='admin'?'Administrátor':'Skladník'}</div></div>
+    </button>`).join('');
+}
+
+window._loginSelectedUser = null;
+window.loginSelectUser = function(id) {
+  window._loginSelectedUser = window._users.find(u=>u.id===id) || null;
+  pinBuffer = '';
+  updatePinDots();
+  document.getElementById('login-error').textContent = '';
+  renderLoginUsers();
+};
+
+function updatePinDots(error) {
+  document.querySelectorAll('.pin-dot').forEach((dot,i) => {
+    dot.className = 'pin-dot' + (i < pinBuffer.length ? (error?' error':' filled') : '');
+  });
+}
+
+window.pinKey = function(k) {
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += k;
+  updatePinDots();
+  if (pinBuffer.length === 4) setTimeout(pinEnter, 150);
+};
+
+window.pinDel = function() { pinBuffer = pinBuffer.slice(0,-1); updatePinDots(); };
+
+window.pinEnter = function() {
+  if (!window._loginSelectedUser) { document.getElementById('login-error').textContent = 'Vyberte uživatele'; return; }
+  if (pinBuffer.length < 4) { document.getElementById('login-error').textContent = 'Zadejte 4-místný PIN'; return; }
+  const user = window._loginSelectedUser;
+  if (user.pinHash !== hashPin(pinBuffer)) {
+    pinBuffer = '';
+    updatePinDots(true);
+    document.getElementById('login-error').textContent = '❌ Nesprávný PIN';
+    setTimeout(()=>{ updatePinDots(); document.getElementById('login-error').textContent=''; }, 1200);
+    return;
+  }
+  // Login success
+  window._currentUser = user;
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('header-user-name').textContent = user.name;
+  // Show admin nav if admin
+  document.querySelectorAll('.admin-only').forEach(el => el.classList.toggle('visible', user.role==='admin'));
+  toast(`👋 Vítejte, ${user.name}!`);
+};
+
+window.logout = function() {
+  if (!confirm('Odhlásit se?')) return;
+  window._currentUser = null;
+  window._loginSelectedUser = null;
+  pinBuffer = '';
+  updatePinDots();
+  document.getElementById('login-error').textContent = '';
+  document.getElementById('login-screen').classList.remove('hidden');
+  renderLoginUsers();
+};
+
+// Users listener from Firestore
+onSnapshot(collection(db,'users'), snap => {
+  window._users = snap.docs.map(d=>({firestoreId:d.id,...d.data()}));
+  renderLoginUsers();
+  renderUsersAdmin();
+});
+
+// Seed default admin if no users exist yet
+async function seedDefaultAdmin() {
+  const snap = await getDocs(collection(db,'users'));
+  if (!snap.empty) return;
+  await setDoc(doc(db,'users','admin'), {
+    id:'admin', name:'Administrátor', role:'admin',
+    pinHash: hashPin('1234'), created: new Date().toISOString()
+  });
+  await setDoc(doc(db,'users','jan'), {
+    id:'jan', name:'Jan Novák', role:'worker',
+    pinHash: hashPin('0000'), created: new Date().toISOString()
+  });
+}
+seedDefaultAdmin();
+
+// ── Admin user management ────────────────────────────────────────────────────
+window.addUser = async function() {
+  if (window._currentUser?.role !== 'admin') { toast('❌ Pouze admin', true); return; }
+  const name = document.getElementById('nu-name').value.trim();
+  const pin  = document.getElementById('nu-pin').value.trim();
+  const role = document.getElementById('nu-role').value;
+  if (!name) { toast('Zadejte jméno', true); return; }
+  if (!/^\d{4}$/.test(pin)) { toast('PIN musí mít přesně 4 číslice', true); return; }
+  setSyncing(true);
+  const id = 'u' + Date.now();
+  try {
+    await setDoc(doc(db,'users',id), { id, name, role, pinHash: hashPin(pin), created: new Date().toISOString() });
+    toast(`✅ Uživatel "${name}" přidán (PIN: ${pin})`);
+    document.getElementById('nu-name').value=''; document.getElementById('nu-pin').value='';
+  } catch(e) { toast('❌ '+e.message, true); }
+  setSyncing(false);
+};
+
+window.deleteUser = async function(fsId) {
+  if (window._currentUser?.role !== 'admin') return;
+  if (!confirm('Smazat uživatele?')) return;
+  setSyncing(true);
+  try { await deleteDoc(doc(db,'users',fsId)); toast('Uživatel smazán'); }
+  catch(e) { toast('❌ '+e.message, true); }
+  setSyncing(false);
+};
+
+window.changeOwnPin = async function() {
+  if (!window._currentUser) return;
+  const p1 = document.getElementById('change-pin').value;
+  const p2 = document.getElementById('change-pin2').value;
+  if (!/^\d{4}$/.test(p1)) { toast('PIN musí mít 4 číslice', true); return; }
+  if (p1 !== p2) { toast('PINy se neshodují', true); return; }
+  setSyncing(true);
+  try {
+    const user = window._users.find(u=>u.id===window._currentUser.id);
+    if (!user) { toast('❌ Uživatel nenalezen', true); return; }
+    await updateDoc(doc(db,'users',user.firestoreId), { pinHash: hashPin(p1) });
+    window._currentUser.pinHash = hashPin(p1);
+    toast('✅ PIN změněn');
+    document.getElementById('change-pin').value=''; document.getElementById('change-pin2').value='';
+  } catch(e) { toast('❌ '+e.message, true); }
+  setSyncing(false);
+};
+
+window.renderUsersAdmin = function() {
+  const el = document.getElementById('users-list');
+  if (!el) return;
+  if (!window._users.length) { el.innerHTML='<div class="empty-state"><div class="icon">👥</div><p>Žádní uživatelé</p></div>'; return; }
+  el.innerHTML = window._users.map(u => `
+    <div class="user-mgmt-card">
+      <div style="font-size:1.5rem">${u.role==='admin'?'👑':'👤'}</div>
+      <div style="flex:1">
+        <div style="font-weight:600">${u.name}</div>
+        <div style="font-family:var(--mono);font-size:0.7rem;color:var(--text-dim)">${u.role==='admin'?'Administrátor':'Skladník'} · ID: ${u.id}</div>
+      </div>
+      <span class="badge ${u.role==='admin'?'badge-yellow':'badge-blue'}">${u.role==='admin'?'Admin':'Skladník'}</span>
+      ${window._currentUser?.role==='admin'&&u.id!=='admin' ? `<button class="btn btn-outline btn-sm" onclick="deleteUser('${u.firestoreId}')">🗑️</button>` : ''}
+    </div>`).join('');
+};
+
+// ── Workers ─────────────────────────────────────────────────────────────────
+window.renderWorkers = function(type) {
+  const el = document.getElementById('workers-'+type);
+  if (!el) return;
+  // Auto-select current logged-in user
+  if (window._currentUser && !window._activeWorker[type]) {
+    window._activeWorker[type] = window._currentUser.name;
+  }
+  const names = window._users.length ? window._users.map(u=>u.name) : window._workers[type];
+  el.innerHTML = names.map(w=>`<div class="worker-chip ${window._activeWorker[type]===w?'selected':''}" onclick="selectWorker('${type}','${w}')">${w}</div>`).join('');
+};
+window.selectWorker = (type,name) => { window._activeWorker[type]=name; renderWorkers(type); };
+window.addWorker = async function(type) {
+  const input = document.getElementById('new-worker-'+type);
+  const name  = input.value.trim(); if (!name) return;
+  const list  = [...new Set([...window._workers.prijem, name])];
+  window._workers.prijem = window._workers.vydej = list;
+  window._activeWorker[type] = name;
+  input.value = '';
+  renderWorkers(type);
+  try { await setDoc(doc(db,'config','workers'),{list}); } catch(e){}
+};
+
+// ── Scanning ─────────────────────────────────────────────────────────────────
+let modalCtx = null;
+window.setScanActive = (type,on) => document.getElementById('scan-area-'+type).classList.toggle('scanning',on);
+
+window.scanProduct = function(type) {
+  const input = document.getElementById('scan-'+type);
+  const val = input.value.trim(); input.value='';
+  if (!val) return;
+  const p = window._products.find(p => p.id===val || p.sku===val || val.startsWith(p.id+'|') || val.includes('|'+p.sku+'|'));
+  if (!p) { toast(`❌ Produkt nenalezen: "${val}"`, true); return; }
+  if (!window._activeWorker[type]) { toast('❌ Vyberte zaměstnance', true); return; }
+  showQtyModal(p, type);
+};
+
+function showQtyModal(product, type) {
+  modalCtx = { product, type };
+  document.getElementById('modal-product-name').textContent = product.name;
+  document.getElementById('modal-product-stock').textContent = `Stav: ${product.qty} ${product.unit} · SKU: ${product.sku}`;
+  document.getElementById('modal-qty').textContent = '1';
+  document.getElementById('modal-qty-input').value = '1';
+  const btn = document.getElementById('modal-confirm-btn');
+  btn.textContent = type==='prijem' ? '📥 Přidat k příjmu' : '📤 Přidat k výdeji';
+  btn.className = 'btn '+(type==='prijem'?'btn-primary':'btn-danger');
+  document.getElementById('qty-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('modal-qty-input').focus(),100);
+}
+
+window.changeQty = function(d) {
+  const inp = document.getElementById('modal-qty-input');
+  const v = Math.max(1,(parseInt(inp.value)||1)+d);
+  inp.value=v; document.getElementById('modal-qty').textContent=v;
+};
+
+window.confirmQty = function() {
+  const qty = parseInt(document.getElementById('modal-qty-input').value)||1;
+  const { product, type } = modalCtx;
+  if (type==='vydej' && product.qty < qty) { toast(`❌ Max ${product.qty} ${product.unit}`, true); return; }
+  const existing = window._sessions[type].find(s=>s.id===product.id);
+  if (existing) existing.qty+=qty;
+  else window._sessions[type].push({id:product.id, firestoreId:product.firestoreId, name:product.name, qty, unit:product.unit});
+  closeModal();
+  renderSession(type);
+  toast(`✅ ${product.name} × ${qty} přidáno`);
+};
+
+window.closeModal = () => { document.getElementById('qty-modal').classList.remove('open'); modalCtx=null; };
+
+window.renderSession = function(type) {
+  const items = window._sessions[type];
+  document.getElementById('session-'+type+'-card').style.display = items.length ? 'block' : 'none';
+  document.getElementById('session-'+type+'-list').innerHTML = items.map((item,i)=>`
+    <div class="session-item">
+      <span class="session-item-name">${item.name}</span>
+      <div class="qty-ctrl">
+        <button class="qty-btn" onclick="adjSQ('${type}',${i},-1)">−</button>
+        <span class="session-item-qty">${item.qty}</span>
+        <button class="qty-btn" onclick="adjSQ('${type}',${i},1)">+</button>
+      </div>
+      <span style="color:var(--text-dim);font-size:0.85rem;margin-left:0.25rem">${item.unit}</span>
+      <button class="btn btn-outline btn-sm" style="margin-left:0.5rem" onclick="remSI('${type}',${i})">✕</button>
+    </div>`).join('');
+};
+
+window.adjSQ = function(type,idx,d) {
+  const item=window._sessions[type][idx], p=window._products.find(x=>x.id===item.id);
+  const nq=item.qty+d;
+  if (nq<1) { remSI(type,idx); return; }
+  if (type==='vydej'&&p&&nq>p.qty) { toast(`❌ Max ${p.qty} ${p.unit}`,true); return; }
+  item.qty=nq; renderSession(type);
+};
+window.remSI = (type,idx) => { window._sessions[type].splice(idx,1); renderSession(type); };
+window.clearSession = (type) => { window._sessions[type]=[]; renderSession(type); };
+
+window.confirmSession = async function(type) {
+  const items = window._sessions[type];
+  if (!items.length) { toast('Nic k potvrzení',true); return; }
+  const btn = document.getElementById('btn-confirm-'+type);
+  btn.disabled=true; setSyncing(true);
+  try {
+    for (const item of items) {
+      const product = window._products.find(p=>p.id===item.id);
+      if (!product) continue;
+      const newQty = type==='prijem' ? product.qty+item.qty : product.qty-item.qty;
+      if (type==='vydej'&&newQty<0) { toast(`❌ Nedostatek: ${product.name}`,true); continue; }
+      await updateDoc(doc(db,'products',product.firestoreId),{qty:newQty});
+      await addLogEntry(type, {...product,qty:newQty}, item.qty, window._activeWorker[type]);
+    }
+    const n=items.length; clearSession(type);
+    toast(`✅ ${type==='prijem'?'Příjem':'Výdej'} potvrzen – ${n} položek`);
+  } catch(e) { toast('❌ '+e.message,true); }
+  btn.disabled=false; setSyncing(false);
+};
+
+// ── Render ────────────────────────────────────────────────────────────────────
+window.updateHeader = function() {
+  const ps=window._products, total=ps.reduce((s,p)=>s+(p.qty||0),0);
+  const today=new Date().toDateString();
+  const moves=window._log.filter(l=>l.time&&new Date(l.time).toDateString()===today).length;
+  ['h-products','stat-products'].forEach(id=>document.getElementById(id).textContent=ps.length);
+  ['h-total','stat-total'].forEach(id=>document.getElementById(id).textContent=total);
+  document.getElementById('h-moves').textContent=moves;
+  document.getElementById('stat-low').textContent=ps.filter(p=>p.qty>0&&p.qty<=p.min).length;
+  document.getElementById('stat-zero').textContent=ps.filter(p=>p.qty===0).length;
+};
+
+window.renderDashboard = function() {
+  updateHeader();
+  renderDashCatSummary();
+  const ps=window._products;
+  const stockEl=document.getElementById('dash-stock-list');
+  if (!ps.length) { stockEl.innerHTML='<div class="empty-state"><div class="icon">📦</div><p>Žádné produkty</p></div>'; }
+  else {
+    const sorted=[...ps].sort((a,b)=>(a.qty/Math.max(a.min,1))-(b.qty/Math.max(b.min,1)));
+    stockEl.innerHTML=sorted.slice(0,8).map(p=>{
+      const ratio=Math.min(p.qty/Math.max(p.min*2,1),1);
+      const color=p.qty===0?'#ff4d6d':p.qty<=p.min?'#ffd166':'#00e5a0';
+      const badge=p.qty===0?'badge-red':p.qty<=p.min?'badge-yellow':'badge-green';
+      const label=p.qty===0?'Vyprodáno':p.qty<=p.min?'Nízký stav':'OK';
+      return `<div style="display:flex;align-items:center;padding:0.6rem 0;border-bottom:1px solid rgba(42,48,64,0.4)">
+        <div style="flex:1;font-size:0.85rem;font-weight:600">${p.name}</div>
+        <div class="stock-bar"><div class="stock-bar-fill" style="width:${ratio*100}%;background:${color}"></div></div>
+        <div style="font-family:var(--mono);font-size:0.85rem;min-width:60px;text-align:right">${p.qty} ${p.unit}</div>
+        <span class="badge ${badge}" style="margin-left:0.75rem;min-width:70px;text-align:center">${label}</span>
+      </div>`;
+    }).join('');
+  }
+  const logEl=document.getElementById('dash-log'), recent=window._log.slice(0,8);
+  if (!recent.length) { logEl.innerHTML='<div class="empty-state"><div class="icon">📋</div><p>Žádné pohyby</p></div>'; }
+  else { logEl.innerHTML=recent.map(l=>`<div class="log-entry">
+    <span class="log-time">${fmtTime(l.time)}</span>
+    <span class="badge ${l.type==='prijem'?'badge-green':'badge-red'}">${l.type==='prijem'?'📥':'📤'} ${l.type==='prijem'?'Příjem':'Výdej'}</span>
+    <span style="flex:1;font-size:0.85rem">${l.product}</span>
+    <span style="font-family:var(--mono);font-size:0.85rem;color:var(--accent2)">${l.qty} ${l.unit}</span>
+  </div>`).join(''); }
+};
+
+window.renderProductsTable = function() {
+  const q   = (document.getElementById('product-search')?.value||'').toLowerCase();
+  const cat = window._activeCatFilter.products;
+  const ps  = window._products.filter(p =>
+    (!cat || p.cat===cat) &&
+    (p.name.toLowerCase().includes(q)||(p.sku||'').toLowerCase().includes(q)||(p.cat||'').toLowerCase().includes(q))
+  );
+  const tb=document.getElementById('products-tbody');
+  if (!ps.length) { tb.innerHTML='<tr><td colspan="8"><div class="empty-state"><div class="icon">📦</div><p>Žádné produkty v této kategorii</p></div></td></tr>'; return; }
+  tb.innerHTML=ps.map(p=>{
+    const b=p.qty===0?'badge-red':p.qty<=p.min?'badge-yellow':'badge-green';
+    const l=p.qty===0?'Vyprodáno':p.qty<=p.min?'Nízký stav':'OK';
+    const cc = getCatColor(p.cat);
+    return `<tr>
+      <td><strong>${p.name}</strong></td>
+      <td><code style="font-family:var(--mono);font-size:0.8rem;color:var(--text-dim)">${p.sku}</code></td>
+      <td><span class="cat-badge" style="background:${cc}22;color:${cc}">${p.cat||'—'}</span></td>
+      <td><span style="font-family:var(--mono);font-weight:700">${p.qty}</span> <span style="color:var(--text-dim)">${p.unit}</span> <span class="badge ${b}" style="margin-left:0.5rem">${l}</span></td>
+      <td style="font-family:var(--mono);color:var(--text-dim)">${p.min} ${p.unit}</td>
+      <td>${p.unit}</td>
+      <td style="font-size:0.8rem;color:var(--text-dim)">${p.loc||'—'}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="deleteProduct('${p.firestoreId}')" title="Smazat">🗑️</button>
+          <button class="btn btn-outline btn-sm" onclick="openEditModal('${p.firestoreId}')" title="Upravit" style="margin-left:0.25rem">✏️</button></td>
+    </tr>`;
+  }).join('');
+};
+
+window.renderQRCodes = function() {
+  const grid = document.getElementById('qr-grid');
+  const ps   = window._products;
+  if (!ps.length) {
+    grid.innerHTML = '<div class="empty-state"><div class="icon">⬛</div><p>Přidejte produkty</p></div>';
+    return;
+  }
+
+  // Render all containers first
+  grid.innerHTML = ps.map(p =>
+    `<div class="qr-item">
+      <div class="qr-code" id="qr-${p.id}"></div>
+      <div class="qr-name">${p.name}</div>
+      <div class="qr-id">${p.sku}</div>
+    </div>`
+  ).join('');
+
+  // Generate QR codes one by one after DOM is ready
+  // Using setTimeout per item avoids the library's internal race condition
+  ps.forEach((p, i) => {
+    setTimeout(() => {
+      const el = document.getElementById('qr-' + p.id);
+      if (!el || typeof QRCode === 'undefined') return;
+      el.innerHTML = ''; // clear any previous attempt
+      try {
+        new QRCode(el, {
+          text: p.id + '|' + p.sku + '|' + p.name,
+          width: 120,
+          height: 120,
+          colorDark: '#000000',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } catch(e) {
+        el.innerHTML = '<div style="font-size:0.7rem;color:#ff4d6d;padding:4px">Chyba QR</div>';
+      }
+    }, i * 30); // 30ms between each to let the library breathe
+  });
+};
+
+window.renderLog = function() {
+  const tb=document.getElementById('log-tbody'), logs=window._log;
+  if (!logs.length) { tb.innerHTML='<tr><td colspan="6"><div class="empty-state"><div class="icon">📋</div><p>Žádné pohyby</p></div></td></tr>'; return; }
+  tb.innerHTML=logs.map(l=>`<tr>
+    <td style="font-family:var(--mono);font-size:0.8rem;white-space:nowrap">${fmtDateTime(l.time)}</td>
+    <td><span class="badge ${l.type==='prijem'?'badge-green':'badge-red'}">${l.type==='prijem'?'📥 Příjem':'📤 Výdej'}</span></td>
+    <td><strong>${l.product}</strong><br><span style="font-family:var(--mono);font-size:0.7rem;color:var(--text-dim)">${l.sku}</span></td>
+    <td style="font-family:var(--mono);font-weight:700;color:var(--accent2)">${l.qty} ${l.unit}</td>
+    <td>${l.worker}</td>
+    <td style="font-family:var(--mono)">${l.stockAfter} ${l.unit}</td>
+  </tr>`).join('');
+};
+
+// ── Excel export ─────────────────────────────────────────────────────────────
+window.exportExcel = function() {
+  const wb=XLSX.utils.book_new();
+  const s1=[['ID','Název','SKU','Kategorie','Množství','Min.','Jednotka','Umístění','Stav'],...window._products.map(p=>[p.id,p.name,p.sku,p.cat,p.qty,p.min,p.unit,p.loc||'',p.qty===0?'Vyprodáno':p.qty<=p.min?'Nízký stav':'OK'])];
+  const ws1=XLSX.utils.aoa_to_sheet(s1); ws1['!cols']=[{wch:14},{wch:30},{wch:15},{wch:20},{wch:10},{wch:8},{wch:10},{wch:25},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws1,'Stav skladu');
+  const s2=[['Datum','Čas','Typ','Produkt','SKU','Množství','Jednotka','Zaměstnanec','Stav po'],...[...window._log].reverse().map(l=>{const d=new Date(l.time);return[d.toLocaleDateString('cs-CZ'),d.toLocaleTimeString('cs-CZ'),l.type==='prijem'?'Příjem':'Výdej',l.preduct||l.product,l.sku,l.qty,l.unit,l.worker,l.stockAfter];})];
+  const ws2=XLSX.utils.aoa_to_sheet(s2); ws2['!cols']=[{wch:12},{wch:10},{wch:10},{wch:30},{wch:15},{wch:10},{wch:10},{wch:20},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Pohyby');
+  const s3=[['Produkt','SKU','Přijato','Vydáno','Aktuální stav','Jednotka'],...window._products.map(p=>[p.name,p.sku,window._log.filter(l=>l.productId===p.id&&l.type==='prijem').reduce((s,l)=>s+l.qty,0),window._log.filter(l=>l.productId===p.id&&l.type==='vydej').reduce((s,l)=>s+l.qty,0),p.qty,p.unit])];
+  const ws3=XLSX.utils.aoa_to_sheet(s3); ws3['!cols']=[{wch:30},{wch:15},{wch:12},{wch:12},{wch:15},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,ws3,'Souhrn');
+  XLSX.writeFile(wb,`sklad_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('📊 Excel exportován');
+};
+
+window.printAllQR = function() {
+  const ps = window._products;
+  if (!ps.length) { toast('Žádné produkty k tisku', true); return; }
+
+  const w = window.open('', '_blank');
+  if (!w) { toast('Povolte otevírání oken v prohlížeči', true); return; }
+
+  // Escape special chars for safe injection into JS string
+  const safe = s => String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,' ');
+
+  const items = ps.map(p =>
+    `<div class="item">
+      <div id="q${p.id}"></div>
+      <div class="name">${p.name}</div>
+      <div class="sku">${p.sku}</div>
+    </div>`
+  ).join('');
+
+  // Generate QR codes one by one using recursive setTimeout,
+  // then print only after the last one is done
+  const qrCalls = ps.map((p, i) =>
+    `{id:"q${p.id}",text:"${safe(p.id)}|${safe(p.sku)}|${safe(p.name)}"}`
+  ).join(',');
+
+  w.document.write(`<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>QR Kódy – SkladovkaPro</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #fff; }
+  .grid { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px; }
+  .item { border: 1px solid #ccc; padding: 10px; text-align: center; width: 148px; border-radius: 4px; page-break-inside: avoid; }
+  .item img { display: block; margin: 0 auto; }
+  .name { font-size: 11px; font-weight: bold; margin-top: 6px; word-break: break-word; line-height: 1.3; }
+  .sku  { font-size: 9px; color: #888; margin-top: 2px; font-family: monospace; }
+  @media print { body { margin: 0; } .grid { gap: 8px; padding: 8px; } }
+</style>
+</head><body>
+<div class="grid">${items}</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+<script>
+  var items = [${qrCalls}];
+  var idx = 0;
+  function genNext() {
+    if (idx >= items.length) {
+      // All done – small extra delay for canvas→img conversion
+      setTimeout(function(){ window.print(); }, 400);
+      return;
+    }
+    var item = items[idx++];
+    var el = document.getElementById(item.id);
+    if (el) {
+      new QRCode(el, {
+        text: item.text,
+        width: 120, height: 120,
+        colorDark: '#000000', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+    setTimeout(genNext, 40);
+  }
+  // Wait for QRCode library to be ready
+  function waitAndStart() {
+    if (typeof QRCode !== 'undefined') { genNext(); }
+    else { setTimeout(waitAndStart, 50); }
+  }
+  waitAndStart();
+<\/script>
+</body></html>`);
+  w.document.close();
+};
+
+// ── EXCEL IMPORT ─────────────────────────────────────────────────────────────
+let importData = []; // parsed rows ready to save
+
+window.triggerImport = function() {
+  if (!window._currentUser) { toast('❌ Přihlaste se', true); return; }
+  if (window._currentUser.role !== 'admin') { toast('❌ Import může provádět pouze administrátor', true); return; }
+  document.getElementById('import-modal').classList.add('open');
+  // Reset to step 1
+  document.getElementById('import-step-upload').style.display = 'block';
+  document.getElementById('import-step-preview').style.display = 'none';
+  document.getElementById('import-confirm-btn').style.display = 'none';
+  document.getElementById('import-error').style.display = 'none';
+  importData = [];
+  document.getElementById('import-file-input').value = '';
+  // Open file dialog immediately
+  setTimeout(() => document.getElementById('import-file-input').click(), 100);
+};
+
+window.closeImportModal = function() {
+  document.getElementById('import-modal').classList.remove('open');
+  importData = [];
+};
+
+document.getElementById('import-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('import-modal')) closeImportModal();
+});
+
+window.handleImportFile = function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+
+      // Try to find "Stav skladu" sheet, fallback to first sheet
+      const sheetName = wb.SheetNames.includes('Stav skladu')
+        ? 'Stav skladu'
+        : wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+      if (rows.length < 2) {
+        showImportError('Soubor neobsahuje žádná data.');
+        return;
+      }
+
+      // Find header row (look for "Název" column)
+      const header = rows[0].map(h => String(h).trim());
+      const col = name => header.findIndex(h => h.toLowerCase() === name.toLowerCase());
+
+      const iNazev    = col('Název');
+      const iSku      = col('SKU');
+      const iKat      = col('Kategorie');
+      const iQty      = col('Množství');
+      const iMin      = col('Min.');
+      const iUnit     = col('Jednotka');
+      const iLoc      = col('Umístění');
+
+      if (iNazev === -1 || iSku === -1) {
+        showImportError('Nenalezeny povinné sloupce "Název" a "SKU". Zkontrolujte formát souboru.');
+        return;
+      }
+
+      // Parse data rows
+      const parsed = [];
+      const errors = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row.some(c => c !== '')) continue; // skip empty rows
+
+        const name = String(row[iNazev] || '').trim();
+        const sku  = String(row[iSku]  || '').trim();
+        if (!name && !sku) continue;
+        if (!name) { errors.push(`Řádek ${i+1}: chybí Název`); continue; }
+        if (!sku)  { errors.push(`Řádek ${i+1}: chybí SKU`);   continue; }
+
+        const qty = parseInt(row[iQty]) || 0;
+        const min = parseInt(row[iMin]) || 0;
+
+        // Check if product already exists (by SKU)
+        const existing = window._products.find(p => p.sku === sku);
+
+        parsed.push({
+          isUpdate:  !!existing,
+          firestoreId: existing?.firestoreId || null,
+          id:        existing?.id || ('P' + Date.now() + '_' + i),
+          name,
+          sku,
+          cat:  String(row[iKat]  || 'Ostatní').trim() || 'Ostatní',
+          qty,
+          min,
+          unit: String(row[iUnit] || 'ks').trim() || 'ks',
+          loc:  String(row[iLoc]  || '').trim(),
+        });
+      }
+
+      if (!parsed.length) {
+        showImportError('Žádné platné řádky k importu.' + (errors.length ? ' Chyby: ' + errors.join(', ') : ''));
+        return;
+      }
+
+      importData = parsed;
+
+      // Show preview
+      const newCount    = parsed.filter(r => !r.isUpdate).length;
+      const updateCount = parsed.filter(r =>  r.isUpdate).length;
+
+      document.getElementById('import-summary').innerHTML = `
+        <div class="stat-card green" style="padding:0.75rem 1rem;flex:1;min-width:120px">
+          <div class="stat-val" style="font-size:1.5rem">${newCount}</div>
+          <div class="stat-label">Nové produkty</div>
+        </div>
+        <div class="stat-card blue" style="padding:0.75rem 1rem;flex:1;min-width:120px">
+          <div class="stat-val" style="font-size:1.5rem">${updateCount}</div>
+          <div class="stat-label">Aktualizace</div>
+        </div>
+        <div class="stat-card yellow" style="padding:0.75rem 1rem;flex:1;min-width:120px">
+          <div class="stat-val" style="font-size:1.5rem">${parsed.length}</div>
+          <div class="stat-label">Celkem řádků</div>
+        </div>`;
+
+      const previewRows = parsed.slice(0, 10);
+      document.getElementById('import-preview-tbody').innerHTML = previewRows.map(r => `
+        <tr>
+          <td><strong>${r.name}</strong></td>
+          <td style="font-family:var(--mono);font-size:0.8rem">${r.sku}</td>
+          <td>${r.cat}</td>
+          <td style="font-family:var(--mono)">${r.qty}</td>
+          <td style="font-family:var(--mono);color:var(--text-dim)">${r.min}</td>
+          <td>${r.unit}</td>
+          <td style="font-size:0.8rem;color:var(--text-dim)">${r.loc||'—'}</td>
+          <td>${r.isUpdate
+            ? '<span class="badge badge-blue">Aktualizace</span>'
+            : '<span class="badge badge-green">Nový</span>'}</td>
+        </tr>`).join('');
+
+      if (errors.length) {
+        document.getElementById('import-error').textContent = '⚠️ Přeskočené řádky: ' + errors.join(' | ');
+        document.getElementById('import-error').style.display = 'block';
+      }
+
+      document.getElementById('import-step-upload').style.display = 'none';
+      document.getElementById('import-step-preview').style.display = 'block';
+      document.getElementById('import-confirm-btn').style.display = 'inline-flex';
+
+    } catch(err) {
+      showImportError('Chyba při čtení souboru: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
+
+function showImportError(msg) {
+  document.getElementById('import-step-upload').style.display = 'block';
+  document.getElementById('import-step-preview').style.display = 'none';
+  document.getElementById('import-confirm-btn').style.display = 'none';
+  document.getElementById('import-error').textContent = '❌ ' + msg;
+  document.getElementById('import-error').style.display = 'block';
+}
+
+window.confirmImport = async function() {
+  if (!importData.length) return;
+  const btn = document.getElementById('import-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Importuji...';
+  setSyncing(true);
+
+  let ok = 0, fail = 0;
+  for (const row of importData) {
+    try {
+      const data = {
+        id:   row.id,
+        name: row.name,
+        sku:  row.sku,
+        cat:  row.cat,
+        qty:  row.qty,
+        min:  row.min,
+        unit: row.unit,
+        loc:  row.loc,
+        created: row.isUpdate ? undefined : new Date().toISOString(),
+      };
+      // Remove undefined keys
+      Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+
+      if (row.isUpdate) {
+        await updateDoc(doc(db, 'products', row.firestoreId), data);
+      } else {
+        await setDoc(doc(db, 'products', row.id), data);
+      }
+      ok++;
+    } catch(e) {
+      console.error('Import row error:', e);
+      fail++;
+    }
+  }
+
+  setSyncing(false);
+  btn.disabled = false;
+  closeImportModal();
+  toast(`✅ Import dokončen: ${ok} produktů${fail ? `, ${fail} chyb` : ''}`);
+};
+
+// ── CAMERA SCANNER ────────────────────────────────────────────────────────────
+let camStream = null;
+let camAnimFrame = null;
+let camType = null;
+let camLastResult = null;
+
+window.openCamera = async function(type) {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    toast('❌ Kamera není podporována v tomto prohlížeči', true); return;
+  }
+  camType = type;
+  camLastResult = null;
+  document.getElementById('cam-result').textContent = '';
+  document.getElementById('cam-status').textContent = 'Spouštění kamery...';
+  document.getElementById('cam-overlay').classList.add('open');
+
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    const video = document.getElementById('cam-video');
+    video.srcObject = camStream;
+    await video.play();
+    document.getElementById('cam-status').textContent = 'Nasměrujte kameru na QR kód';
+    scanFrame();
+  } catch(e) {
+    document.getElementById('cam-status').textContent = '❌ Nelze spustit kameru: ' + e.message;
+  }
+};
+
+window.closeCamera = function() {
+  if (camAnimFrame) { cancelAnimationFrame(camAnimFrame); camAnimFrame = null; }
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  const video = document.getElementById('cam-video');
+  video.srcObject = null;
+  document.getElementById('cam-overlay').classList.remove('open');
+  camType = null;
+  camLastResult = null;
+};
+
+function scanFrame() {
+  const video  = document.getElementById('cam-video');
+  const canvas = document.getElementById('cam-canvas');
+
+  if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+    camAnimFrame = requestAnimationFrame(scanFrame); return;
+  }
+
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  if (typeof jsQR === 'undefined') {
+    camAnimFrame = requestAnimationFrame(scanFrame); return;
+  }
+
+  const code = jsQR(imageData.data, imageData.width, imageData.height, {
+    inversionAttempts: 'dontInvert'
+  });
+
+  if (code && code.data && code.data !== camLastResult) {
+    camLastResult = code.data;
+    document.getElementById('cam-result').textContent = '✅ ' + code.data.split('|')[0];
+    document.getElementById('cam-status').textContent = 'QR kód načten!';
+
+    // Vibrate on mobile if supported
+    if (navigator.vibrate) navigator.vibrate(100);
+
+    // Process the scanned code
+    const val = code.data;
+    const product = window._products.find(p =>
+      p.id === val || p.sku === val ||
+      val.startsWith(p.id + '|') || val.includes('|' + p.sku + '|')
+    );
+
+    if (!product) {
+      document.getElementById('cam-status').textContent = '❌ Produkt nenalezen, zkuste znovu';
+      camLastResult = null; // allow retry
+      camAnimFrame = requestAnimationFrame(scanFrame);
+      return;
+    }
+
+    if (!window._activeWorker[camType]) {
+      closeCamera();
+      toast('❌ Vyberte zaměstnance', true);
+      return;
+    }
+
+    // Success – close camera and show qty modal
+    closeCamera();
+    showQtyModal(product, camType);
+    return;
+  }
+
+  camAnimFrame = requestAnimationFrame(scanFrame);
+}
+
+// ── EDIT PRODUCT ─────────────────────────────────────────────────────────────
+let editCtx = null;
+
+window.openEditModal = function(fsId) {
+  const product = window._products.find(p=>p.firestoreId===fsId);
+  if (!product) return;
+  editCtx = product;
+
+  document.getElementById('edit-name').value = product.name || '';
+  document.getElementById('edit-sku').value  = product.sku  || '';
+  document.getElementById('edit-qty').value  = product.qty  ?? 0;
+  document.getElementById('edit-min').value  = product.min  ?? 0;
+  document.getElementById('edit-loc').value  = product.loc  || '';
+
+  // Populate category select
+  const catSel = document.getElementById('edit-cat');
+  catSel.innerHTML = window._categories.map(c=>
+    `<option value="${c.name}" ${c.name===product.cat?'selected':''}>${c.name}</option>`
+  ).join('');
+
+  // Set unit
+  const unitSel = document.getElementById('edit-unit');
+  [...unitSel.options].forEach(o => o.selected = o.value===product.unit);
+
+  document.getElementById('edit-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('edit-name').focus(), 100);
+};
+
+window.closeEditModal = function() {
+  document.getElementById('edit-modal').classList.remove('open');
+  editCtx = null;
+};
+
+window.saveEditProduct = async function() {
+  if (!editCtx) return;
+  const name = document.getElementById('edit-name').value.trim();
+  if (!name) { toast('Zadejte název produktu', true); return; }
+
+  const updated = {
+    name,
+    sku:  document.getElementById('edit-sku').value.trim() || editCtx.sku,
+    cat:  document.getElementById('edit-cat').value,
+    qty:  parseInt(document.getElementById('edit-qty').value) || 0,
+    min:  parseInt(document.getElementById('edit-min').value) || 0,
+    unit: document.getElementById('edit-unit').value,
+    loc:  document.getElementById('edit-loc').value.trim(),
+  };
+
+  setSyncing(true);
+  try {
+    await updateDoc(doc(db,'products', editCtx.firestoreId), updated);
+    toast(`✅ Produkt "${name}" upraven`);
+    closeEditModal();
+  } catch(e) {
+    toast('❌ Chyba: '+e.message, true);
+  }
+  setSyncing(false);
+};
+
+// Close edit modal on overlay click
+document.getElementById('edit-modal').addEventListener('click', e=>{
+  if (e.target===document.getElementById('edit-modal')) closeEditModal();
+});
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+window.showPage = function(id) {
+  // Auth guard
+  if (!window._currentUser) { toast('❌ Přihlaste se', true); return; }
+  if (id==='admin' && window._currentUser.role !== 'admin') { toast('❌ Pouze administrátor', true); return; }
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>{ if(n.getAttribute('onclick')?.includes("'"+id+"'")) n.classList.add('active'); });
+  // Update mobile bottom nav
+  const mobileNavIds = ['dashboard','prijem','vydej','products'];
+  document.querySelectorAll('.mnav-item').forEach(n=>n.classList.remove('active'));
+  const mnavEl = document.getElementById('mnav-'+id);
+  if (mnavEl) mnavEl.classList.add('active');
+  else document.getElementById('mnav-more').classList.add('active');
+  if (id==='dashboard') renderDashboard();
+  if (id==='products')  renderProductsTable();
+  if (id==='qrcodes')   renderQRCodes();
+  if (id==='prijem'||id==='vydej') {
+    renderWorkers(id);
+    renderCatFilterBar('scan-cat-'+id, id);
+    if (id==='vydej') renderCatProductList('vydej');
+  }
+  if (id==='log') renderLog();
+  if (id==='admin') { renderUsersAdmin(); renderCategoriesAdmin(); }
+  // Scroll to top on mobile
+  window.scrollTo(0,0);
+};
+
+window.openMoreMenu  = () => document.getElementById('mobile-more-overlay').classList.add('open');
+window.closeMoreMenu = () => document.getElementById('mobile-more-overlay').classList.remove('open');
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+function fmtTime(iso) { if(!iso)return'—'; const d=new Date(iso); return d.toLocaleTimeString('cs-CZ',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDateTime(iso) { if(!iso)return'—'; const d=new Date(iso); return d.toLocaleDateString('cs-CZ')+' '+d.toLocaleTimeString('cs-CZ',{hour:'2-digit',minute:'2-digit'}); }
+
+let toastT;
+window.toast = function(msg,err) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='show'+(err?' error':'');
+  clearTimeout(toastT); toastT=setTimeout(()=>el.className='',3500);
+};
+
+document.getElementById('qty-modal').addEventListener('click', e=>{ if(e.target===document.getElementById('qty-modal')) closeModal(); });
+
+// Init – show login screen, don't auto-login
+renderLoginUsers();
+setSyncing(false);
+document.getElementById('sync-dot').className='sync-dot online';
+document.getElementById('sync-label').textContent='Připojeno';
+</script>
+</body>
+</html>
